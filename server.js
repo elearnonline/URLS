@@ -1,61 +1,45 @@
 const express = require('express');
-const cors = require('cors');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const url = require('url');
-
+const cors = require('cors');
 const app = express();
 
-app.use(cors({
-  origin: ['http://clientDomain.com']
-}));
+const corsOptions = {
+  origin: "http://localhost:3000",
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
+const scrapeUrls = async (url, allUrls = []) => {
+  try {
+    const response = await axios.get(url);
+    const $ = cheerio.load(response.data);
+    $('a').each((i, el) => {
+      const link = $(el).attr('href');
+      if (link && !link.startsWith('http')) {
+        allUrls.push(`${url}${link}`);
+        scrapeUrls(`${url}${link}`, allUrls);
+      } else if (link) {
+        allUrls.push(link);
+        scrapeUrls(link, allUrls);
+      }
+    });
+  } catch (error) {
+    console.log(error);
+  }
+  return allUrls;
+};
+
+
 
 app.get('/scrape', async (req, res) => {
-  const { url: initialUrl } = req.query;
-  const parsedUrl = url.parse(initialUrl);
-  const domain = parsedUrl.protocol + '//' + parsedUrl.host;
-  const urls = await getUrls(initialUrl, domain);
-  res.json(urls);
+    const { url } = req.query;
+    try {
+      const urlList = await scrapeUrls(url);
+      res.status(200).send(urlList);
+    } catch (error) {
+      res.status(500).send(error);
+    }
 });
 
-app.listen(5000, () => {
-  console.log('Server running on port 5000');
-});
-
-const getUrls = async (url, domain) => {
-  const response = await axios.get(url);
-  const $ = cheerio.load(response.data);
-  let urls = $('a').map((i, el) => $(el).attr('href')).get();
-
-  urls = urls.map((u) => {
-    if (!u.startsWith('http') && !u.startsWith('/')) {
-      return domain + '/' + u;
-    }
-    return u;
-  });
-
-  const result = [];
-  for (const u of urls) {
-    result.push(...await getUrlsRecursive(u, domain));
-  }
-  return result;
-};
-
-const getUrlsRecursive = async (url, domain) => {
-  const response = await axios.get(url);
-  const $ = cheerio.load(response.data);
-  let urls = $('a').map((i, el) => $(el).attr('href')).get();
-
-  urls = urls.map((u) => {
-    if (!u.startsWith('http') && !u.startsWith('/')) {
-      return domain + '/' + u;
-    }
-    return u;
-  });
-
-  const result = [];
-  for (const u of urls) {
-    result.push(...await getUrlsRecursive(u, domain));
-  }
-  return [...result, url];
-};
+app.listen(4000, () => console.log("Server is listening on port 4000"));
